@@ -9,7 +9,9 @@
     "dev": "concurrently \"npm run dev:web\" \"npm run dev:bot\"",
     "postinstall": "prisma generate",
     "lint": "next lint",
-    "start": "next start"
+    "start:web": "next start",
+    "start:bot": "nodemon",
+    "start": "concurrently \"npm run start:web\" \"npm run start:bot\""
   },
   "dependencies": {
     "@next-auth/prisma-adapter": "^1.0.5",
