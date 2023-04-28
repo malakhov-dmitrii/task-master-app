@@ -5,8 +5,8 @@
   "scripts": {
     "build": "next build",
     "dev:web": "next dev",
-    "dev:bot": "node --loader @swc-node/register/esm ./src/bot/index.ts",
-    "dev": "",
+    "dev:bot": "nodemon",
+    "dev": "concurrently \"npm run dev:web\" \"npm run dev:bot\"",
     "postinstall": "prisma generate",
     "lint": "next lint",
     "start": "next start"
@@ -20,9 +20,11 @@
     "@trpc/next": "^10.18.0",
     "@trpc/react-query": "^10.18.0",
     "@trpc/server": "^10.18.0",
+    "concurrently": "^8.0.1",
     "dotenv": "^16.0.3",
     "next": "^13.2.4",
     "next-auth": "^4.21.0",
+    "nodemon": "^2.0.22",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "superjson": "1.12.2",
@@ -31,6 +33,7 @@
   },
   "devDependencies": {
     "@swc-node/register": "^1.6.5",
+    "@types/dotenv": "^8.2.0",
     "@types/eslint": "^8.21.3",
     "@types/node": "^18.15.5",
     "@types/prettier": "^2.7.2",

@@ -1,16 +1,16 @@
 import { Telegraf } from "telegraf";
-import { env } from "~/env.mjs";
 import { prisma } from "~/server/db";
+import dotenv from "dotenv";
+// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+dotenv.config();
 
-const bot = new Telegraf(env.TELEGRAM_TOKEN);
+const bot = new Telegraf(process.env.TELEGRAM_TOKEN!);
 
 bot.start((ctx) => ctx.reply("Welcome"));
 
-const main = async () => {
-  const users = await prisma.user.findMany();
-  console.log(users);
-};
-
+void bot.launch();
 console.log("Bot started");
 
-void main();
+// Enable graceful stop
+process.once("SIGINT", () => bot.stop("SIGINT"));
+process.once("SIGTERM", () => bot.stop("SIGTERM"));

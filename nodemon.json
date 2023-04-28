@@ -1,0 +1,6 @@
+{
+  "watch": ["./"],
+  "ext": "ts,json",
+  "ignore": ["src/**/*.spec.ts"],
+  "exec": "node --loader @swc-node/register/esm ./src/bot/index.ts"
+}
