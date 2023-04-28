@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
+    "dev:web": "next dev",
+    "dev:bot": "node --loader @swc-node/register/esm ./src/bot/index.ts",
+    "dev": "",
     "postinstall": "prisma generate",
     "lint": "next lint",
     "start": "next start"
@@ -18,14 +20,17 @@
     "@trpc/next": "^10.18.0",
     "@trpc/react-query": "^10.18.0",
     "@trpc/server": "^10.18.0",
+    "dotenv": "^16.0.3",
     "next": "^13.2.4",
     "next-auth": "^4.21.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "superjson": "1.12.2",
+    "telegraf": "^4.12.2",
     "zod": "^3.21.4"
   },
   "devDependencies": {
+    "@swc-node/register": "^1.6.5",
     "@types/eslint": "^8.21.3",
     "@types/node": "^18.15.5",
     "@types/prettier": "^2.7.2",
