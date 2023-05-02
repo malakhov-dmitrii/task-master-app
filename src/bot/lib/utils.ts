@@ -60,7 +60,7 @@ export const ensureUserExists = async (user: User) => {
 
 export const ensureUserInChat = async (
   ctx: NarrowedContext<Context<Update>, Update.MessageUpdate<Message>>,
-  user?: User,
+  user?: User | null,
 ) => {
   const userObject = {
     id: user?.id ?? ctx.from.id,

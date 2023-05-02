@@ -164,13 +164,7 @@ bot.on("message", async (ctx) => {
   const replyToMessageId = ctx.message.message_thread_id;
   const messageId = replyToMessageId ?? ctx.message.message_id;
 
-  const assigneeMention = {
-    first_name: "",
-    last_name: "",
-    username: "",
-    id: -1,
-    is_bot: false,
-  };
+  let assigneeMention = null as User | null;
 
   // @ts-expect-error this field may be available
   const entities = ctx.message?.entities as MessageEntity[] | undefined;
@@ -180,10 +174,13 @@ bot.on("message", async (ctx) => {
   )?.user as User;
 
   if (textMention) {
-    assigneeMention.first_name = textMention.first_name ?? "";
-    assigneeMention.last_name = textMention.last_name ?? "";
-    assigneeMention.username = textMention.username ?? "";
-    assigneeMention.id = textMention.id;
+    assigneeMention = {
+      first_name: textMention.first_name ?? "",
+      last_name: textMention.last_name ?? "",
+      username: textMention.username ?? "",
+      id: textMention.id,
+      is_bot: textMention.is_bot ?? false,
+    };
   } else {
     const mentions =
       entities
@@ -219,9 +216,14 @@ bot.on("message", async (ctx) => {
       return;
     }
 
-    assigneeMention.first_name = `${userFromMentions?.fullName ?? ""}`;
-    assigneeMention.username = `${userFromMentions?.username ?? ""}`;
-    assigneeMention.id = userFromMentions?.telegramId ?? -1;
+    if (userFromMentions) {
+      assigneeMention = {
+        first_name: `${userFromMentions?.fullName ?? ""}`,
+        username: `${userFromMentions?.username ?? ""}`,
+        id: userFromMentions?.telegramId ?? -1,
+        is_bot: false,
+      };
+    }
     /** */
   }
 
