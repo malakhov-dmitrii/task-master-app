@@ -4,6 +4,7 @@ import { type NextPage } from "next";
 import Head from "next/head";
 
 import { useEffect, useState } from "react";
+import { toast } from "react-toastify";
 import { Button } from "~/components/ui/button";
 import { Skeleton } from "~/components/ui/skeleton";
 import { TypographyH3, TypographyP } from "~/components/ui/typography";
@@ -36,6 +37,31 @@ const Home: NextPage = () => {
     { user_id: json?.initDataUnsafe?.user?.id! },
     { enabled: !!json?.initDataUnsafe?.user?.id },
   );
+  const utils = api.useContext();
+  const deleteTask = api.tasks.deleteTask.useMutation({
+    onSettled: () => {
+      void utils.tasks.listChats.invalidate();
+      void utils.tasks.listChats.refetch();
+    },
+    onError: (error) => {
+      toast.error(`Failed to delete: ${error.message}`);
+    },
+    onSuccess: () => {
+      toast.success(`Task has been deleted`);
+    },
+  });
+  const markTaskAsDone = api.tasks.markAsDone.useMutation({
+    onSettled: () => {
+      void utils.tasks.listChats.invalidate();
+      void utils.tasks.listChats.refetch();
+    },
+    onError: (error) => {
+      toast.error(`Failed to update status: ${error.message}`);
+    },
+    onSuccess: () => {
+      toast.success(`Marked as done`);
+    },
+  });
 
   useEffect(() => {
     if (window.Telegram?.WebApp) {
@@ -65,7 +91,11 @@ const Home: NextPage = () => {
         </p>
         <div className="border-b my-4"></div>
 
-        {chats.isLoading && <Skeleton className="w-full h-screen"></Skeleton>}
+        {(chats.isLoading ||
+          deleteTask.isLoading ||
+          markTaskAsDone.isLoading) && (
+          <Skeleton className="w-full h-screen"></Skeleton>
+        )}
 
         {selectedChat ? (
           <div>
@@ -96,7 +126,9 @@ const Home: NextPage = () => {
                       size="sm"
                       className="w-full"
                       onClick={() => {
-                        alert("Not implemented yet");
+                        markTaskAsDone.mutate({
+                          task_id: task.id,
+                        });
                       }}
                     >
                       Done
@@ -116,10 +148,12 @@ const Home: NextPage = () => {
                       variant="outline"
                       className="w-full"
                       onClick={() => {
-                        alert("Not implemented yet");
+                        deleteTask.mutate({
+                          task_id: task.id,
+                        });
                       }}
                     >
-                      Cancel
+                      Delete
                     </Button>
                   </div>
                 </div>

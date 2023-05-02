@@ -1,3 +1,8 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import { type Task } from "@prisma/client";
 import { type Context, type NarrowedContext } from "telegraf";
 import {
   type Message,
@@ -5,6 +10,7 @@ import {
   type User,
 } from "telegraf/typings/core/types/typegram";
 import config from "~/bot/config";
+import { bot } from "~/bot/lib/bot";
 import { prisma } from "~/server/db";
 
 const chatUsersCache = new Map<number, User[]>();
@@ -128,26 +134,50 @@ export const handleBotAdded = async (
       new_chat_members?.find((i) => i.username === config.bot_username) ||
       group_chat_created
     ) {
-      void ctx.reply(`Hello, I'm a task manager bot. I can help you to delegate your tasks.
-      
-To get started, please adjust group settings:
-1. Add me to the group as an administrator.
-2. Enable "Chat History For New Members" to "visible" in group settings.
+      //       const greeting = `Hello, I'm a task manager bot. I can help you to delegate your tasks.
 
-Now, we're ready to go.
-      
-You can create a task by mentioning me in any message.
-For example, you can write "Hey @${config.bot_username}, please do something".
+      // To get started, please adjust group settings:
+      // 1. Add me to the group as an administrator.
+      // 2. Enable "Chat History For New Members" to "visible" in group settings.
 
-Also, you can assign a task to another user by mentioning him. 
-For example, you can write "Hey @user, please do something".
+      // Now, we're ready to go.
 
-You can summon me in any chat - I will list all active tasks, so you can send them to other chat, or to take actions (edit, complete, etc):
-Just start typing "@${config.bot_username}" and select a task from the list, or press "Manage tasks" button on top.
+      // You can create a task by mentioning me in any message.
+      // For example, you can write "Hey @${config.bot_username}, please do something".
 
-If you have any questions, please contact @${config.author_username}
+      // Also, you can assign a task to another user by mentioning him.
+      // For example, you can write "Hey @user, please do something".
 
-`);
+      // You can summon me in any chat - I will list all active tasks, so you can send them to other chat, or to take actions (edit, complete, etc):
+      // Just start typing "@${config.bot_username}" and select a task from the list, or press "Manage tasks" button on top.
+
+      // If you have any questions, please contact @${config.author_username}
+
+      // `;
+
+      const greeting = `<b>Setup:</b>
+- Create a group chat and add me to it as an administrator.
+- Enable "Chat History For New Members" to "visible" in group settings.
+
+<b>How to use:</b>
+- Mention me in any message to create a task.
+- Mention another user to assign a task to him.
+- Start typing @${config.bot_username} in any chat to list all active tasks.
+- Refer to agenda to see all tasks active today.
+- Press "Manage tasks" button on top for advanced actions.
+
+For help, write to @${config.author_username}`;
+
+      void ctx.reply(greeting, { parse_mode: "HTML" });
+      await prisma.chat.create({
+        data: {
+          telegramId: ctx.chat.id,
+          // @ts-expect-error okay
+          name: ctx.chat.title ?? "",
+        },
+      });
+
+      void updateAgenda(ctx.chat.id);
     }
 
     await Promise.all(
@@ -155,5 +185,126 @@ If you have any questions, please contact @${config.author_username}
         ?.filter((i) => !i.is_bot)
         .map((user) => ensureUserInChat(ctx, user)) ?? [],
     );
+  }
+};
+
+const getAgendaTemplate = (tasks: Task[]) => {
+  return `<b>Agenda for ${new Date().toLocaleDateString()}:</b>
+  
+Tasks with no ETC or Deadline date: ${
+    tasks.filter((task) => !task.deadline).length
+  }
+Tasks with no assignee: ${tasks.filter((task) => !task.assigneeId).length}
+Tasks older than 1 week: ${
+    tasks.filter(
+      (task) => task.createdAt < new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    ).length
+  }
+
+All active tasks:
+${
+  tasks.length
+    ? tasks
+        // not done first
+        .sort((a, b) => (a.done ? 1 : -1) - (b.done ? 1 : -1))
+        .map((task, index) => {
+          const text = `${index + 1}. ${task.text}`;
+          return task.done ? `<s>${text}</s>` : text;
+        })
+        .join("\n")
+    : "No tasks yet"
+}
+  `;
+};
+
+export const updateAgenda = async (chatId: number) => {
+  // const prevAgenda = await prisma.agenda.findUnique({ where: { chatId } });
+  const chat = await prisma.chat.findUnique({
+    where: { telegramId: chatId },
+    include: {
+      tasks: {
+        // If task is marked as done today - it should be present in agenda
+        // If task is marked as done before today - it should not be present in agenda, code here:
+        where: {
+          OR: [
+            {
+              updatedAt: {
+                gte: new Date(new Date().setHours(0, 0, 0, 0)),
+              },
+            },
+            {
+              AND: {
+                updatedAt: {
+                  lt: new Date(new Date().setHours(0, 0, 0, 0)),
+                },
+                done: false,
+              },
+            },
+          ],
+        },
+      },
+      agenda: true,
+    },
+  });
+
+  if (!chat) return;
+  const agenda = getAgendaTemplate(chat.tasks);
+
+  if (chat.agenda) {
+    await bot.telegram
+      .editMessageText(
+        chat.telegramId,
+        chat.agenda.messageId,
+        undefined,
+        agenda,
+        {
+          parse_mode: "HTML",
+        },
+      )
+      .catch((e) => {
+        console.log(e);
+      });
+
+    await prisma.agenda
+      .update({
+        where: {
+          id: chat.agenda.id,
+        },
+        data: {
+          text: agenda,
+        },
+      })
+      .catch((e) => {
+        console.log(e);
+      });
+  } else {
+    const agendaMessage = await bot.telegram.sendMessage(
+      chat.telegramId,
+      agenda,
+      {
+        disable_notification: true,
+        parse_mode: "HTML",
+      },
+    );
+
+    await bot.telegram.pinChatMessage(
+      chat.telegramId,
+      agendaMessage.message_id,
+      {
+        disable_notification: true,
+      },
+    );
+
+    await prisma.agenda.create({
+      data: {
+        messageId: agendaMessage.message_id,
+        text: agenda,
+        chat: {
+          connect: {
+            id: chat.id,
+          },
+        },
+      },
+    });
   }
 };

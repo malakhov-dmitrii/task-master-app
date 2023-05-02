@@ -2,29 +2,26 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
-import { type Context, type NarrowedContext, Telegraf } from "telegraf";
+import axios from "axios";
 import { prisma } from "~/server/db";
 import dotenv from "dotenv";
 import {
   type MessageEntity,
   type InlineQueryResult,
   type Message,
-  type Update,
   type User,
 } from "telegraf/typings/core/types/typegram";
-import axios from "axios";
 import config from "~/bot/config";
 import { type Chat, type Task } from "@prisma/client";
 import {
   ensureUserExists,
   ensureUserInChat,
   handleBotAdded,
+  updateAgenda,
 } from "~/bot/lib/utils";
+import { bot, token } from "~/bot/lib/bot";
 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
 dotenv.config();
-
-const token = process.env.TELEGRAM_TOKEN!;
-const bot = new Telegraf(token);
 
 bot.start((ctx) =>
   ctx.reply("Welcome", {
@@ -41,85 +38,20 @@ bot.start((ctx) =>
   }),
 );
 
-const getAgendaTemplate = (tasks: Task[]) => {
-  return `<b>Agenda for ${new Date().toLocaleDateString()}:</b>
-  
-Tasks with no ETC or Deadline date: ${
-    tasks.filter((task) => !task.deadline).length
-  }
-Tasks with no assignee: ${tasks.filter((task) => !task.assigneeId).length}
-Tasks older than 1 week: ${
-    tasks.filter(
-      (task) => task.createdAt < new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-    ).length
-  }
-
-All active tasks:
-${tasks.map((task, index) => `${index + 1}. ${task.text}`).join("\n")}
-  `;
-};
-
-const updateAgenda = async (chatId: string) => {
-  // const prevAgenda = await prisma.agenda.findUnique({ where: { chatId } });
-
-  const tasks = await prisma.task.findMany({
-    where: {
-      AND: {
-        chatId,
-        done: false,
-      },
-    },
-  });
-
-  const agenda = getAgendaTemplate(tasks);
-
-  const agendaMessage = await bot.telegram.sendMessage(chatId, agenda, {
-    disable_notification: true,
-    parse_mode: "HTML",
-  });
-  await prisma.agenda.create({
-    data: {
-      messageId: agendaMessage.message_id,
-      text: agenda,
-      chat: {
-        connect: {
-          id: chatId,
-        },
-      },
-    },
-  });
-
-  // if (prevAgenda) {
-  // }
-
-  // await prisma.chat.update({
-  //   where: {
-  //     telegramId: chatId,
-  //   },
-  //   data: {
-  //     agenda,
-  //   },
-  // });
-};
-
-// void prisma.chat.findMany().then((chats) => {
-//   chats.forEach((chat) => {
-//     void updateAgenda(chat.id);
-//   });
-// });
-
 export const saveServiceMessage = async (message: Message) => {
   // @ts-expect-error typing is wrong
   const taskId = message.text?.match(/Task ID: (\w+)/)?.[1];
   if (!taskId) return;
-  await prisma.task.update({
-    where: { id: taskId },
-    data: {
-      serviceMessages: {
-        push: message.message_id,
+  await prisma.task
+    .update({
+      where: { id: taskId },
+      data: {
+        serviceMessages: {
+          push: message.message_id,
+        },
       },
-    },
-  });
+    })
+    .catch(handleErr);
 };
 export const clearServiceMessages = async (
   task: Task & {
@@ -133,20 +65,26 @@ export const clearServiceMessages = async (
     await bot.telegram.deleteMessage(task.chat.telegramId, id).catch(handleErr);
     console.log("Deleted message", id);
   }
-  await prisma.task.update({
-    where: { id: task.id },
-    data: {
-      serviceMessages: {
-        set: [],
+  await prisma.task
+    .update({
+      where: { id: task.id },
+      data: {
+        serviceMessages: {
+          set: [],
+        },
       },
-    },
-  });
+    })
+    .catch(handleErr);
   console.log("Messages clean up");
 };
 
 bot.on("message", async (ctx) => {
   // @ts-expect-error typing is wrong
   const text = (ctx.message.text ?? "") as string;
+  // @ts-expect-error typing is wrong
+  const replyToText = ctx.message?.reply_to_message?.text as string | undefined;
+
+  console.log({ text, replyToText });
 
   await saveServiceMessage(ctx.message);
   if (text.includes("botignore")) {
@@ -163,8 +101,26 @@ bot.on("message", async (ctx) => {
 
   const replyToMessageId = ctx.message.message_thread_id;
   const messageId = replyToMessageId ?? ctx.message.message_id;
+  const threadReplyMatch =
+    // @ts-expect-error typing is wrong
+    ctx.message.reply_to_message?.message_id === replyToMessageId;
+
+  const res = await axios
+    .post(`https://api.telegram.org/bot${token}/messages.messagesSlice`, {
+      count: 1,
+      // offset_id: messageId,
+      offset_id_offset: messageId,
+    })
+    .catch((e) => {
+      // console.log(e.response.data);
+    });
+
+  console.log(res);
+
+  // ctx.
 
   let assigneeMention = null as User | null;
+  const botMentioned = text.includes(config.bot_username);
 
   // @ts-expect-error this field may be available
   const entities = ctx.message?.entities as MessageEntity[] | undefined;
@@ -181,7 +137,7 @@ bot.on("message", async (ctx) => {
       id: textMention.id,
       is_bot: textMention.is_bot ?? false,
     };
-  } else {
+  } else if (!botMentioned) {
     const mentions =
       entities
         ?.filter((entity) => entity.type === "mention")
@@ -192,8 +148,8 @@ bot.on("message", async (ctx) => {
     /**
      * Handle mention of a user in a task when only username is available
      */
+    const m = mentions[0];
     if (mentions.length > 1) {
-      const m = mentions[0];
       void ctx.reply(
         `Only one assignee per task is allowed, the first one will be used: ${
           m ?? "n/a"
@@ -201,17 +157,19 @@ bot.on("message", async (ctx) => {
       );
     }
 
-    const userFromMentions = mentions[0]
+    const userFromMentions = m
       ? await prisma.user.findFirst({
           where: {
-            username: mentions[0].slice(1),
+            username: m.slice(1),
           },
         })
       : null;
 
-    if (!userFromMentions && mentions[0]) {
+    if (!userFromMentions && m) {
+      console.log("User not found", m, botMentioned);
+
       await ctx.reply(
-        `User ${mentions[0]} should write something in this chat to be able to be mentioned in taskss`,
+        `User ${m} should write something in this chat to be able to be mentioned in taskss`,
       );
       return;
     }
@@ -227,35 +185,51 @@ bot.on("message", async (ctx) => {
     /** */
   }
 
-  const botMentioned = text.includes(config.bot_username);
-
   if (botMentioned || assigneeMention) {
+    if (!threadReplyMatch) {
+      void ctx.reply(
+        "To update the task, please reply to the original task message",
+      );
+      return;
+    }
+
     await ensureUserInChat(ctx, assigneeMention);
 
     let task = await prisma.task.findFirst({
       where: {
-        messageId: messageId,
+        AND: {
+          chat: {
+            telegramId: ctx.chat.id,
+          },
+          messageId: messageId,
+        },
       },
     });
     const editMode = !!task;
 
     if (task) {
-      task = await prisma.task.update({
-        where: {
-          id: task.id,
-        },
-        data: {
-          // TODO: We need to be careful about dates and timezones
-          text: `${task?.text ?? ""}
+      task = await prisma.task
+        .update({
+          where: {
+            id: task.id,
+          },
+          data: {
+            // TODO: We need to be careful about dates and timezones
+            text: `${task?.text ?? ""}
 
 <b>----- ${new Date(ctx.message.date * 1000).toLocaleString()} -----</b>
 ${text}`,
-        },
-      });
+          },
+        })
+        .catch(handleErr);
     } else {
       task = await prisma.task.create({
         data: {
-          text: text,
+          text: replyToText
+            ? `${replyToText}
+          
+${text}`
+            : text,
           messageId,
           ...(assigneeMention && {
             assignee: {
@@ -312,6 +286,7 @@ ${task.text}
         },
       },
     });
+    await updateAgenda(ctx.chat.id);
   }
 });
 
@@ -341,7 +316,7 @@ bot.on("inline_query", async (ctx) => {
         task.text
           ?.replaceAll("\n", " ")
           .replaceAll("<b>", "")
-          .replaceAll("</b>", "") ?? "No text",
+          .replaceAll("</b>", "") || "No text",
       description: `Assigned to: ${
         task.assignee?.fullName ?? "not assigned"
       }. Chat: ${task.chat.name}`,
@@ -442,19 +417,21 @@ bot.on("callback_query", async (ctx) => {
   }
 
   if (action === "rsvp") {
-    await prisma.task.update({
-      where: {
-        id: taskId,
-      },
-      data: {
-        confirmed: true,
-        assignee: {
-          connect: {
-            id: user.id,
+    await prisma.task
+      .update({
+        where: {
+          id: taskId,
+        },
+        data: {
+          confirmed: true,
+          assignee: {
+            connect: {
+              id: user.id,
+            },
           },
         },
-      },
-    });
+      })
+      .catch(handleErr);
 
     const text = `${user.fullName} confirmed the receipt of the task`;
     void ctx.answerCbQuery(text);
@@ -496,6 +473,7 @@ bot.on("callback_query", async (ctx) => {
   }
 
   await clearServiceMessages(task);
+  await updateAgenda(task.chat.telegramId);
 });
 
 void bot.launch();
@@ -505,4 +483,7 @@ console.log("Bot started");
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
 
-const handleErr = (err: Error) => console.error(err);
+const handleErr = (err: Error) => {
+  console.error(err);
+  return null;
+};
