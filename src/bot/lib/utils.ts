@@ -118,9 +118,16 @@ export const handleBotAdded = async (
   ctx: NarrowedContext<Context<Update>, Update.MessageUpdate<Message>>,
 ) => {
   // @ts-expect-error typing is wrong
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  const group_chat_created = ctx.message.group_chat_created;
+
+  // @ts-expect-error typing is wrong
   const new_chat_members = ctx.message.new_chat_members as User[] | undefined;
-  if (new_chat_members) {
-    if (new_chat_members.find((i) => i.username === config.bot_username)) {
+  if (new_chat_members || group_chat_created) {
+    if (
+      new_chat_members?.find((i) => i.username === config.bot_username) ||
+      group_chat_created
+    ) {
       void ctx.reply(`Hello, I'm a task manager bot. I can help you to delegate your tasks.
       
 To get started, please adjust group settings:
@@ -129,10 +136,14 @@ To get started, please adjust group settings:
 
 Now, we're ready to go.
       
-You can create a task by mentioning me in any message. For example, you can write "Hey @${config.bot_username}, please do something".
-Also, you can assign a task to another user by mentioning him. For example, you can write "Hey @user, please do something".
+You can create a task by mentioning me in any message.
+For example, you can write "Hey @${config.bot_username}, please do something".
 
-You can summon me in any chat - I will list all active tasks, so you can send them to other chat, or to take actions (edit, complete, etc).
+Also, you can assign a task to another user by mentioning him. 
+For example, you can write "Hey @user, please do something".
+
+You can summon me in any chat - I will list all active tasks, so you can send them to other chat, or to take actions (edit, complete, etc):
+Just start typing "@${config.bot_username}" and select a task from the list, or press "Manage tasks" button on top.
 
 If you have any questions, please contact @${config.author_username}
 
@@ -141,8 +152,8 @@ If you have any questions, please contact @${config.author_username}
 
     await Promise.all(
       new_chat_members
-        .filter((i) => !i.is_bot)
-        .map((user) => ensureUserInChat(ctx, user)),
+        ?.filter((i) => !i.is_bot)
+        .map((user) => ensureUserInChat(ctx, user)) ?? [],
     );
   }
 };

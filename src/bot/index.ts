@@ -154,7 +154,11 @@ bot.on("message", async (ctx) => {
     return;
   }
   await handleBotAdded(ctx);
+  // @ts-expect-error typing is wrong
+  if (ctx.message.group_chat_created || !text.trim()) return;
+
   await ensureUserInChat(ctx);
+
   // console.log("Message", ctx.message.message_id, ctx.message.text);
 
   const replyToMessageId = ctx.message.message_thread_id;
