@@ -248,15 +248,21 @@ ${text}`
       `${`${assigneeMention.first_name ?? ""} ${
         assigneeMention.last_name ?? ""
       }`.trim()}`;
+
+    if (!task) {
+      console.log("Task not found");
+      return;
+    }
+
     const reply = await ctx.reply(
       `<b>Task ${editMode ? "updated" : "created"}</b>
 <b>Assignee:</b> ${assigneeName ?? "not assigned"}
-<b>Receive confirmed:</b> no
+<b>Receive confirmed:</b> ${task?.confirmed ? "yes" : "no"}
 
 <b>Task content:</b>
-${task.text}
+${task?.text ?? ""}
 
-<span class="tg-spoiler">#botignore Task ID: ${task.id}</span>
+<span class="tg-spoiler">#botignore Task ID: ${task?.id ?? ""}</span>
         `,
       {
         parse_mode: "HTML",
@@ -269,7 +275,7 @@ ${task.text}
                 // this will assign the task to the user who clicked the button
                 // and set the confirmed field to true
                 // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-                callback_data: `rsvp:${task.id}`,
+                callback_data: `rsvp:${task?.id ?? ""}`,
               },
             ],
           ],
